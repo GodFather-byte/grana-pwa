@@ -235,7 +235,7 @@ const TELAS = {
       </div>
     </section>
     <section class="bloco"><h2>Aplicativo</h2><div class="acoes" style="margin-top:0">
-      ${instalar ? `<button class="btn cheio" data-a="instalar">Instalar no aparelho</button>` : ''}
+      ${aparelho().instalado ? '' : `<button class="btn cheio" data-a="comoInstalar">Instalar no ${aparelho().ios || aparelho().android ? aparelho().nome : 'aparelho'}</button>`}
       <button class="btn sec" data-a="exportar">Baixar backup</button><button class="btn sec" data-a="importar">Restaurar backup</button>
       <button class="btn sec cheio" data-a="csv">Exportar lançamentos para planilha (CSV)</button>
       <button class="btn sec" data-a="demo">Carregar dados de exemplo</button><button class="btn perigo" data-a="apagar">Apagar tudo</button>
@@ -284,7 +284,7 @@ const TITULOS = { assistente: 'Assistente', planejar: 'Planejar', ajustes: 'Ajus
 function render() {
   const v = ui.view, comMes = ['inicio', 'lancamentos', 'relatorios'].includes(v);
   $('#top').innerHTML = `<span class="marca">${TITULOS[v] || 'Grana'}</span>${comMes ? `<div class="mes"><button class="ico" data-a="mes" data-d="-1" aria-label="Mês anterior">${I.ant}</button><span>${Mes(ui.mes)}</span><button class="ico" data-a="mes" data-d="1" aria-label="Próximo mês">${I.prox}</button></div>` : ''}<button class="ico ${comMes ? '' : 'so'}" data-a="go" data-v="ajustes" aria-label="Ajustes">${I.ajustes}</button>`;
-  $('#view').innerHTML = TELAS[v]();
+  $('#view').innerHTML = (v === 'inicio' ? faixaInstalar() : '') + TELAS[v]();
   document.querySelectorAll('#nav > button[data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   if (v === 'assistente') requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight));
 }
@@ -412,7 +412,10 @@ const A = {
     } catch (e) { aviso(e.message); }
     el.disabled = false;
   },
-  async instalar() { if (!instalar) return; instalar.prompt(); await instalar.userChoice; instalar = null; render(); },
+  async instalar() { if (!instalar) return tutorialInstalar(); fechar(); instalar.prompt(); await instalar.userChoice; instalar = null; render(); },
+  comoInstalar: () => tutorialInstalar(),
+  instNao: () => { gravarInst('nao'); fechar(); render(); aviso('Tudo bem. O passo a passo continua em Ajustes.'); },
+  async copiarLink() { try { await navigator.clipboard.writeText(location.origin + location.pathname); aviso('Link copiado'); } catch (e) { aviso(location.origin + location.pathname); } },
   exportar: () => baixar(`grana-backup-${hojeISO()}.json`, JSON.stringify({ ...S, cfg: { ...S.cfg, chave: '' } }, null, 1), 'application/json'),
   importar: () => $('#pick-backup').click(),
   csv() {
@@ -647,6 +650,65 @@ function dadosDeExemplo() {
   S = { ...vazio(), cfg: S.cfg, tx, contas, orc: { alimentacao: 450, mercado: 1100, transporte: 300, lazer: 250, compras: 350 }, metas: [{ id: uid(), nome: 'Reserva de emergência', alvo: 10000, atual: 3200, prazo: '', emoji: '🛟' }, { id: uid(), nome: 'Notebook novo', alvo: 4500, atual: 1350, prazo: somaMes(mk, 6), emoji: '💻' }] };
 }
 
+/* ---------- instalação: identifica o aparelho e mostra o passo a passo certo ---------- */
+const CHAVE_INST = 'grana.instalar';   // '' nunca viu, 'visto' já viu o tutorial, 'nao' pediu para não mostrar
+const lerInst = () => { try { return localStorage.getItem(CHAVE_INST) || ''; } catch (e) { return ''; } };
+const gravarInst = v => { try { localStorage.setItem(CHAVE_INST, v); } catch (e) { } };
+function aparelho(ua = navigator.userAgent || '') {
+  const ipad = /iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const iphone = /iPhone|iPod/.test(ua), ios = iphone || ipad, android = /Android/.test(ua);
+  const instalado = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  const embutido = /Instagram|FBAN|FBAV|FB_IAB|LinkedInApp|TikTok|musical_ly|BytedanceWebview|Line\/|MicroMessenger|Snapchat|Twitter|Pinterest|GSA\//.test(ua);
+  let nav = 'outro';
+  if (ios) nav = /CriOS/.test(ua) ? 'Chrome' : /FxiOS/.test(ua) ? 'Firefox' : /EdgiOS/.test(ua) ? 'Edge' : /OPiOS|OPT\//.test(ua) ? 'Opera' : 'Safari';
+  else if (android) nav = /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Firefox/.test(ua) ? 'Firefox' : /EdgA/.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : 'Chrome';
+  // O Safari novo congela o "OS 18_x" no user agent; o número real vem em "Version/".
+  const v = Number((ua.match(/Version\/(\d+)/) || ua.match(/OS (\d+)_/) || [])[1]) || 0;
+  return { ios, iphone, ipad, android, instalado, embutido, nav, versao: ios ? v : 0, nome: iphone ? 'iPhone' : ipad ? 'iPad' : android ? 'Android' : 'computador' };
+}
+const IC = {
+  share: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M8 7l4-4 4 4M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>',
+  mais: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8.5v7M8.5 12h7"/></svg>',
+};
+function passosInstalar(ap) {
+  const add = `Role a lista e toque em <b>Adicionar à Tela de Início</b> ${IC.mais}`;
+  if (ap.embutido) return [`Este link abriu dentro de outro aplicativo, que não deixa instalar. Toque no menu <b>•••</b> e escolha <b>Abrir no ${ap.ios ? 'Safari' : 'Chrome'}</b>.`, `Se não houver essa opção, copie o link abaixo e cole no ${ap.ios ? 'Safari' : 'Chrome'}.`, 'Lá o Grana mostra de novo este passo a passo.'];
+  if (ap.ios) {
+    const fim = [add, ap.versao >= 26 ? 'Deixe ligada a opção de abrir como app e toque em <b>Adicionar</b>, no canto de cima.' : 'Toque em <b>Adicionar</b>, no canto de cima.'];
+    if (ap.nav === 'Safari') return [ap.versao >= 26
+      ? `Toque em <b>•••</b> na barra do Safari e depois em <b>Compartilhar</b> ${IC.share}<small>Se o ícone Compartilhar já aparece na barra, toque direto nele.</small>`
+      : `Toque em <b>Compartilhar</b> ${IC.share} na barra do Safari${ap.ipad ? ', no alto da tela' : ', embaixo da tela'}.<small>Não achou? Toque em ••• e depois em Compartilhar.</small>`, ...fim];
+    if (ap.nav === 'Chrome') return [`Toque em <b>Compartilhar</b> ${IC.share}, na ponta direita da barra de endereço do Chrome.`, ...fim];
+    return [`Abra o menu do ${ap.nav} e toque em <b>Compartilhar</b> ${IC.share}<small>Se não encontrar, copie o link abaixo e abra no Safari.</small>`, ...fim];
+  }
+  if (ap.android) return [`Toque no menu <b>${ap.nav === 'Samsung Internet' ? '☰' : '⋮'}</b> do ${ap.nav}.`, 'Toque em <b>Instalar app</b> ou <b>Adicionar à tela inicial</b>.', 'Confirme em <b>Instalar</b>.'];
+  return ['Para instalar no celular, abra este mesmo link no iPhone ou no Android. O Grana mostra o passo a passo do seu aparelho.', 'No computador, o Chrome e o Edge mostram um ícone de instalar na ponta direita da barra de endereço.'];
+}
+function tutorialInstalar() {
+  const ap = aparelho();
+  if (ap.instalado) return aviso('O Grana já está instalado neste aparelho.');
+  const movel = ap.ios || ap.android, direto = !!instalar && !ap.embutido;
+  const rotulo = (ap.embutido ? [ap.nome, 'aberto dentro de outro app'] : [ap.nome, movel && ap.nav !== 'outro' ? ap.nav : '', ap.nav === 'Safari' && ap.versao ? 'iOS ' + ap.versao : '']).filter(Boolean).join(' · ');
+  abrir(`<span class="inst-chip">Detectamos: ${esc(rotulo)}</span>
+  <h2>${movel ? `Instale o Grana no seu ${ap.nome}` : 'Instale o Grana'}</h2>
+  <p class="muted">${direto ? 'Um toque e ele fica na tela inicial, abre em tela cheia e funciona sem internet.' : 'Leva 10 segundos, não passa pela loja de aplicativos e ele abre em tela cheia, como qualquer app.'}</p>
+  ${direto ? '' : `<ol class="passos">${passosInstalar(ap).map(p => `<li><div>${p}</div></li>`).join('')}</ol>${movel && !ap.embutido ? `<p class="sm muted">Pronto: o ícone do Grana aparece na tela de início.</p>` : ''}`}
+  <div class="acoes">${direto ? `<button class="btn" data-a="instalar">Instalar agora</button>` : ''}${ap.embutido || !movel || (ap.ios && !['Safari', 'Chrome'].includes(ap.nav)) ? `<button class="btn" data-a="copiarLink">Copiar link</button>` : ''}<button class="btn sec" data-a="closeSheet">${direto ? 'Agora não' : 'Entendi'}</button></div>
+  ${movel ? `<p class="sm" style="margin-top:12px;text-align:center"><button class="link" data-a="instNao">Não mostrar de novo</button></p>` : ''}`);
+  if (!lerInst()) gravarInst('visto');
+}
+function faixaInstalar() {
+  const ap = aparelho();
+  if (ap.instalado || !(ap.ios || ap.android) || lerInst() === 'nao') return '';
+  return `<button class="faixa-inst" data-a="comoInstalar"><span>${IC.mais}</span><span><b>Instale o Grana no seu ${ap.nome}</b><small>Veja o passo a passo para o ${ap.embutido ? 'seu aparelho' : ap.nav}</small></span><span class="seta">›</span></button>`;
+}
+/* abre sozinho na primeira visita pelo celular */
+function oferecerInstalacao() {
+  const ap = aparelho();
+  if (ap.instalado || lerInst() || !$('#sheet').hidden || !(ap.ios || ap.android)) return;
+  tutorialInstalar();
+}
+
 /* ---------- eventos ---------- */
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-a]'); if (!el) return;
@@ -665,10 +727,12 @@ $('#pick-backup').addEventListener('change', async e => {
   try { const j = JSON.parse(await f.text()); if (!Array.isArray(j.tx)) throw 0; const chave = S.cfg.chave; S = { ...vazio(), ...j, cfg: { ...vazio().cfg, ...(j.cfg || {}), chave: j.cfg?.chave || chave } }; salvar(); aplicarTema(); go('inicio'); aviso('Backup restaurado'); }
   catch (err) { aviso('Esse arquivo não é um backup do Grana.'); }
 });
-window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); instalar = e; if (ui.view === 'ajustes') render(); });
-window.addEventListener('appinstalled', () => { instalar = null; if (ui.view === 'ajustes') render(); });
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); instalar = e; oferecerInstalacao(); });
+window.addEventListener('appinstalled', () => { instalar = null; fechar(); render(); aviso('Grana instalado'); });
 
 /* ---------- início ---------- */
 carregar(); aplicarTema(); render();
 if (location.hash === '#novo') formTx(); else if (location.hash === '#falar') go('assistente');
+/* iPhone e iPad mostram o tutorial logo; o Android espera um instante pelo botão de instalar do próprio navegador */
+setTimeout(oferecerInstalacao, aparelho().ios ? 700 : 3000);
 if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => { }));

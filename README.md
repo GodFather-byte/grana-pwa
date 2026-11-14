@@ -11,6 +11,7 @@ Aplicativo de finanças pessoais que roda inteiro no navegador. Você fala (ou e
 - **Metas** com cálculo de quanto guardar por mês para chegar no prazo.
 - **Contas fixas e assinaturas**: custo mensal e anual, aviso de vencimento, botão Pagar que já lança a despesa.
 - **Relatórios**: rosca por categoria, ritmo de gastos contra o mês anterior, 6 meses de receitas e despesas, e análise do mês escrita pelo Gemini.
+- **Tutorial de instalação**: identifica o aparelho e o navegador (iPhone/iPad no Safari ou Chrome, Android, link aberto dentro de outro app) e mostra o passo a passo certo na primeira visita.
 - **PWA**: instala na tela inicial, abre sem internet, backup em JSON e exportação em CSV (abre no Excel).
 
 ## Como rodar
