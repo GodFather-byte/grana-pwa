@@ -1,0 +1,15 @@
+{
+  "name": "grana-pwa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Grana — controle de gastos por voz (PWA) com servidor que repassa as chamadas ao Gemini",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0"
+  }
+}

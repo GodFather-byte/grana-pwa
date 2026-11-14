@@ -188,3 +188,17 @@ label.campo{display:block;margin-top:14px;font-size:13.5px;font-weight:600;color
 .analise li{margin-bottom:5px}
 
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---------- instalação ---------- */
+.inst-chip{display:inline-block;margin-bottom:10px;padding:5px 11px;border-radius:99px;background:var(--soft);color:var(--ink2);font-size:13px;font-weight:600}
+.passos{list-style:none;counter-reset:p;margin:16px 0 12px;padding:0;display:grid;gap:10px}
+.passos li{counter-increment:p;display:flex;gap:12px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:13px 14px;line-height:1.45}
+.passos li::before{content:counter(p);flex:none;width:28px;height:28px;border-radius:50%;background:var(--brand);color:var(--on-brand);font:700 15px/28px var(--display);text-align:center}
+.passos li > div{flex:1;min-width:0;padding-top:2px}
+.passos small{display:block;margin-top:4px;color:var(--ink2);font-size:13px}
+.ic{display:inline-block;width:22px;height:22px;vertical-align:-5px;fill:none;stroke:#0A84FF;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.faixa-inst{display:flex;align-items:center;gap:12px;width:100%;margin:4px 0 14px;padding:12px 14px;border-radius:16px;background:var(--surface);border:1px solid var(--line);text-align:left;color:var(--ink)}
+.faixa-inst > span:nth-child(2){flex:1;min-width:0}
+.faixa-inst b{display:block;font-weight:600}
+.faixa-inst small{display:block;color:var(--ink2);font-size:13px}
+.faixa-inst .seta{color:var(--ink2);font-size:22px}

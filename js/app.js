@@ -47,6 +47,11 @@ const MODELO_PADRAO = 'gemini-3.8-flash';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const vazio = () => ({ tx: [], orc: {}, metas: [], contas: [], chat: [], analises: {}, cfg: { chave: '', modelo: MODELO_PADRAO, falar: true, tema: 'claro' } });
 let S = vazio();
+/* quando o app é servido pelo server.js com GEMINI_API_KEY, o assistente funciona sem chave no aparelho */
+let servidor = false, servidorAudio = false; try { servidor = localStorage.getItem('grana.servidor') === '1'; servidorAudio = localStorage.getItem('grana.servidorAudio') === '1'; } catch (e) { }
+/* servidor só com Claude não recebe áudio: a fala é transcrita pelo ditado do aparelho e segue como texto */
+const ditar = () => servidor && !servidorAudio && !S.cfg.chave;
+const temIA = () => servidor || !!S.cfg.chave;
 const ui = { view: 'inicio', mes: mesAtual(), aba: 'orcamentos', filtro: 'tudo', busca: '', ocupado: false };
 
 function carregar() {
@@ -138,7 +143,7 @@ function barraOrc(id, r) {
 const TELAS = {
   inicio() {
     const mk = ui.mes, r = resumo(mk), lh = livreHoje(mk), tx = doMes(mk).sort(ordem).slice(0, 5), av = avisos(mk).slice(0, 4);
-    if (!S.tx.length) return `<div class="vazio">${roseta()}<h2>Fale o que gastou</h2><p>Toque no microfone e diga, por exemplo, “gastei 32 reais no almoço”. O Grana anota, categoriza e mostra para onde o dinheiro vai.</p><div class="acoes"><button class="btn" data-a="go" data-v="ajustes">Conectar o Gemini</button><button class="btn sec" data-a="demo">Ver com dados de exemplo</button></div><p class="sm" style="margin-top:14px"><button class="link" data-a="novo">Ou anotar um gasto à mão</button></p></div>`;
+    if (!S.tx.length) return `<div class="vazio">${roseta()}<h2>Fale o que gastou</h2><p>Toque no microfone e diga, por exemplo, “gastei 32 reais no almoço”. O Grana anota, categoriza e mostra para onde o dinheiro vai.</p><div class="acoes">${temIA() ? `<button class="btn" data-a="mic">Falar um gasto</button>` : `<button class="btn" data-a="go" data-v="ajustes">Conectar o Gemini</button>`}<button class="btn sec" data-a="demo">Ver com dados de exemplo</button></div><p class="sm" style="margin-top:14px"><button class="link" data-a="novo">Ou anotar um gasto à mão</button></p></div>`;
     const orcs = Object.keys(S.orc).filter(id => S.orc[id] > 0).sort((a, b) => (r.porCat[b] || 0) / S.orc[b] - (r.porCat[a] || 0) / S.orc[a]).slice(0, 3);
     return `
     <section class="saldo">${roseta()}
@@ -169,7 +174,7 @@ const TELAS = {
       const txs = (m.ids || []).map(id => S.tx.find(t => t.id === id)).filter(Boolean);
       return `<div class="msg ia ${m.erro ? 'erro' : ''}"><p>${esc(m.txt)}</p>${txs.length ? `<div class="salvos">${txs.map(t => linhaTx(t)).join('')}</div><div class="rodape"><button class="link" data-a="desfazer" data-i="${i}">Desfazer</button><span class="muted">Toque num item para corrigir</span></div>` : ''}${m.acao ? `<div class="rodape"><button class="link" data-a="go" data-v="ajustes">${esc(m.acao)}</button></div>` : ''}</div>`;
     }).join('');
-    return `<div class="chat">${msgs || `<div class="vazio" style="padding-bottom:8px">${roseta()}<h2>Diga ou escreva</h2><p>Toque no microfone para falar, fotografe um cupom fiscal ou escreva abaixo.</p>${S.cfg.chave ? '' : `<div class="acoes"><button class="btn" data-a="go" data-v="ajustes">Conectar o Gemini</button></div>`}</div><div class="chips">${sug.map(s => `<button class="chip" data-a="sugestao">${s}</button>`).join('')}</div>`}</div>
+    return `<div class="chat">${msgs || `<div class="vazio" style="padding-bottom:8px">${roseta()}<h2>Diga ou escreva</h2><p>Toque no microfone para falar, fotografe um cupom fiscal ou escreva abaixo.</p>${temIA() ? '' : `<div class="acoes"><button class="btn" data-a="go" data-v="ajustes">Conectar o Gemini</button></div>`}</div><div class="chips">${sug.map(s => `<button class="chip" data-a="sugestao">${s}</button>`).join('')}</div>`}</div>
     <form class="compor" data-form="pergunta"><button type="button" class="ico" data-a="foto" aria-label="Fotografar cupom fiscal">${I.foto}</button><input name="q" autocomplete="off" placeholder="Escreva um gasto ou uma pergunta" aria-label="Mensagem"><button class="ico env" aria-label="Enviar">${I.enviar}</button></form>`;
   },
 
@@ -214,7 +219,7 @@ const TELAS = {
     <section class="bloco"><h2>Ritmo de gastos</h2><div class="cartao pad">${linhaAcumulada(mk)}<div class="legenda"><span><i style="background:var(--neg)"></i>${nomeMes(mk, true)}</span><span><i style="background:var(--ink2);opacity:.45"></i>${nomeMes(somaMes(mk, -1), true)}</span></div></div></section>
     <section class="bloco"><h2>Últimos 6 meses</h2><div class="cartao pad">${barras6(mk)}<div class="legenda"><span><i style="background:var(--pos)"></i>Receitas</span><span><i style="background:var(--neg)"></i>Despesas</span></div></div></section>
     <section class="bloco"><h2>Análise do assistente</h2>
-      ${an ? `<div class="cartao pad analise"><p>${esc(an.resumo)}</p>${an.pontos?.length ? `<ul>${an.pontos.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}${an.sugestoes?.length ? `<p><b>O que fazer</b></p><ul>${an.sugestoes.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}</div>` : `<p class="muted">O Gemini lê os números de ${nomeMes(mk)} e aponta onde dá para economizar.</p>`}
+      ${an ? `<div class="cartao pad analise"><p>${esc(an.resumo)}</p>${an.pontos?.length ? `<ul>${an.pontos.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}${an.sugestoes?.length ? `<p><b>O que fazer</b></p><ul>${an.sugestoes.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}</div>` : `<p class="muted">O assistente lê os números de ${nomeMes(mk)} e aponta onde dá para economizar.</p>`}
       <div class="acoes"><button class="btn ${an ? 'sec' : ''} cheio" data-a="analisar" ${ui.ocupado ? 'disabled' : ''}>${ui.ocupado ? 'Analisando' : an ? 'Analisar de novo' : 'Analisar este mês'}</button></div>
     </section>`;
   },
@@ -223,9 +228,9 @@ const TELAS = {
     const c = S.cfg;
     return `
     <section class="bloco" style="margin-top:6px"><h2>Assistente de voz</h2><div class="cartao pad">
-      <p class="sm muted">A voz e as fotos são interpretadas pelo Gemini, do Google. Crie uma chave gratuita em <a class="link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> e cole aqui.</p>
+      ${servidor ? `<p class="aviso bom" style="margin-bottom:10px">O assistente já está conectado. Não é preciso chave.</p><p class="sm muted">Se preferir usar a sua própria chave do Gemini, crie uma em <a class="link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> e cole aqui.</p>` : `<p class="sm muted">A voz e as fotos são interpretadas pelo Gemini, do Google. Crie uma chave gratuita em <a class="link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> e cole aqui.</p>`}
       <form data-form="cfg">
-        <label class="campo">Chave da API do Gemini<input name="chave" type="password" autocomplete="off" value="${esc(c.chave)}" placeholder="AIza..."></label>
+        <label class="campo">Chave da API do Gemini${servidor ? ' (opcional)' : ''}<input name="chave" type="password" autocomplete="off" value="${esc(c.chave)}" placeholder="AIza..."></label>
         <label class="campo">Modelo<input name="modelo" list="modelos" value="${esc(c.modelo)}" autocomplete="off"></label><datalist id="modelos"></datalist>
         <div class="acoes"><button class="btn">Salvar chave</button><button type="button" class="btn sec" data-a="testar">Testar conexão</button></div>
       </form></div>
@@ -235,12 +240,12 @@ const TELAS = {
       </div>
     </section>
     <section class="bloco"><h2>Aplicativo</h2><div class="acoes" style="margin-top:0">
-      ${instalar ? `<button class="btn cheio" data-a="instalar">Instalar no aparelho</button>` : ''}
+      ${aparelho().instalado ? '' : `<button class="btn cheio" data-a="comoInstalar">Instalar no ${aparelho().ios || aparelho().android ? aparelho().nome : 'aparelho'}</button>`}
       <button class="btn sec" data-a="exportar">Baixar backup</button><button class="btn sec" data-a="importar">Restaurar backup</button>
       <button class="btn sec cheio" data-a="csv">Exportar lançamentos para planilha (CSV)</button>
       <button class="btn sec" data-a="demo">Carregar dados de exemplo</button><button class="btn perigo" data-a="apagar">Apagar tudo</button>
     </div>
-    <p class="sm muted" style="margin-top:14px">Seus lançamentos ficam guardados só neste aparelho. O áudio, as fotos e um resumo dos seus números são enviados ao Gemini apenas quando você usa o assistente.</p></section>`;
+    <p class="sm muted" style="margin-top:14px">Seus lançamentos ficam guardados só neste aparelho. O áudio, as fotos e um resumo dos seus números são enviados ao serviço de IA do assistente (Claude ou Gemini) apenas quando você o usa.</p></section>`;
   },
 };
 
@@ -284,7 +289,7 @@ const TITULOS = { assistente: 'Assistente', planejar: 'Planejar', ajustes: 'Ajus
 function render() {
   const v = ui.view, comMes = ['inicio', 'lancamentos', 'relatorios'].includes(v);
   $('#top').innerHTML = `<span class="marca">${TITULOS[v] || 'Grana'}</span>${comMes ? `<div class="mes"><button class="ico" data-a="mes" data-d="-1" aria-label="Mês anterior">${I.ant}</button><span>${Mes(ui.mes)}</span><button class="ico" data-a="mes" data-d="1" aria-label="Próximo mês">${I.prox}</button></div>` : ''}<button class="ico ${comMes ? '' : 'so'}" data-a="go" data-v="ajustes" aria-label="Ajustes">${I.ajustes}</button>`;
-  $('#view').innerHTML = TELAS[v]();
+  $('#view').innerHTML = (v === 'inicio' ? faixaInstalar() : '') + TELAS[v]();
   document.querySelectorAll('#nav > button[data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   if (v === 'assistente') requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight));
 }
@@ -403,7 +408,8 @@ const A = {
   tema: () => { S.cfg.tema = S.cfg.tema === 'escuro' ? 'claro' : 'escuro'; salvar(); aplicarTema(); render(); },
   async testar(d, el) {
     const f = el.closest('form'); S.cfg.chave = f.chave.value.trim(); S.cfg.modelo = f.modelo.value.trim() || MODELO_PADRAO; salvar();
-    if (!S.cfg.chave) return aviso('Cole a chave primeiro.');
+    if (!temIA()) return aviso('Cole a chave primeiro.');
+    if (!S.cfg.chave) return aviso('O assistente já está conectado. Não é preciso chave.');
     el.disabled = true;
     try {
       const ms = await listarModelos(); $('#modelos').innerHTML = ms.map(m => `<option value="${esc(m)}">`).join('');
@@ -412,7 +418,10 @@ const A = {
     } catch (e) { aviso(e.message); }
     el.disabled = false;
   },
-  async instalar() { if (!instalar) return; instalar.prompt(); await instalar.userChoice; instalar = null; render(); },
+  async instalar() { if (!instalar) return tutorialInstalar(); fechar(); instalar.prompt(); await instalar.userChoice; instalar = null; render(); },
+  comoInstalar: () => tutorialInstalar(),
+  instNao: () => { gravarInst('nao'); fechar(); render(); aviso('Tudo bem. O passo a passo continua em Ajustes.'); },
+  async copiarLink() { try { await navigator.clipboard.writeText(location.origin + location.pathname); aviso('Link copiado'); } catch (e) { aviso(location.origin + location.pathname); } },
   exportar: () => baixar(`grana-backup-${hojeISO()}.json`, JSON.stringify({ ...S, cfg: { ...S.cfg, chave: '' } }, null, 1), 'application/json'),
   importar: () => $('#pick-backup').click(),
   csv() {
@@ -435,15 +444,18 @@ class Falha extends Error { constructor(msg, acao) { super(msg); this.acao = aca
 async function chamar(caminho, corpo) {
   if (!navigator.onLine) throw new Falha('Sem internet. O assistente precisa de conexão; os lançamentos à mão continuam funcionando.');
   let r;
-  try { r = await fetch(`${API}/${caminho}`, { method: corpo ? 'POST' : 'GET', headers: { 'x-goog-api-key': S.cfg.chave, ...(corpo ? { 'Content-Type': 'application/json' } : {}) }, body: corpo ? JSON.stringify(corpo) : undefined }); }
-  catch (e) { throw new Falha('Não foi possível falar com o Gemini. Confira a internet e tente de novo.'); }
+  const proprio = !!S.cfg.chave;   // quem colou a própria chave fala direto com o Gemini
+  try { r = await fetch(`${proprio ? API : 'api/gemini'}/${caminho}`, { method: corpo ? 'POST' : 'GET', headers: { ...(proprio ? { 'x-goog-api-key': S.cfg.chave } : {}), ...(corpo ? { 'Content-Type': 'application/json' } : {}) }, body: corpo ? JSON.stringify(corpo) : undefined }); }
+  catch (e) { throw new Falha('Não foi possível falar com o assistente. Confira a internet e tente de novo.'); }
   if (r.ok) return r.json();
   let msg = ''; try { msg = (await r.json()).error?.message || ''; } catch (e) { /* sem corpo */ }
   if (r.status === 404) { const e = new Falha('Modelo não encontrado.'); e.status = 404; throw e; }
+  if (!proprio && r.status === 429 && /demonstração/.test(msg)) throw new Falha('O limite de uso desta demonstração foi atingido. Tente de novo daqui a alguns minutos.');
+  if (!proprio && r.status === 503) throw new Falha(msg || 'O assistente está indisponível agora.');
   if (r.status === 400 && /api key/i.test(msg) || r.status === 401 || r.status === 403) throw new Falha('A chave do Gemini não foi aceita. Confira a chave nos Ajustes.', 'Abrir Ajustes');
-  if (r.status === 429) throw new Falha('O limite de uso da sua chave do Gemini foi atingido. Espere um minuto e tente de novo.');
-  if (r.status >= 500) throw new Falha('O Gemini está indisponível agora. Tente de novo em instantes.');
-  throw new Falha('O Gemini recusou o pedido: ' + (msg || 'erro ' + r.status));
+  if (r.status === 429) throw new Falha(proprio ? 'O limite de uso da sua chave do Gemini foi atingido. Espere um minuto e tente de novo.' : 'O assistente está com muitos pedidos agora. Espere um minuto e tente de novo.');
+  if (r.status >= 500) throw new Falha('O assistente está indisponível agora. Tente de novo em instantes.');
+  throw new Falha(proprio ? 'O Gemini recusou o pedido: ' + (msg || 'erro ' + r.status) : msg || 'O assistente não conseguiu atender. Tente de novo.');
 }
 async function listarModelos() {
   const j = await chamar('models?pageSize=200');
@@ -454,7 +466,7 @@ function melhorModelo(ms) {
   return [...ms].sort((a, b) => nota(b) - nota(a)).find(n => nota(n) >= 0) || ms.find(n => /flash/.test(n)) || ms[0];
 }
 async function gemini(partes, esquema, sistema) {
-  if (!S.cfg.chave) throw new Falha('Para usar a voz, conecte sua chave gratuita do Gemini.', 'Abrir Ajustes');
+  if (!temIA()) throw new Falha('Para usar a voz, conecte sua chave gratuita do Gemini.', 'Abrir Ajustes');
   const corpo = { systemInstruction: { parts: [{ text: sistema }] }, contents: [{ role: 'user', parts: partes }], generationConfig: { temperature: 0.2, responseMimeType: 'application/json', responseSchema: esquema } };
   let j;
   try { j = await chamar(`models/${encodeURIComponent(S.cfg.modelo || MODELO_PADRAO)}:generateContent`, corpo); }
@@ -464,8 +476,8 @@ async function gemini(partes, esquema, sistema) {
     S.cfg.modelo = m; salvar(); j = await chamar(`models/${encodeURIComponent(m)}:generateContent`, corpo);
   }
   const txt = (j.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('');
-  if (!txt) throw new Falha('O Gemini não devolveu resposta. Tente de novo.');
-  try { return JSON.parse(txt.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch (e) { throw new Falha('Não entendi a resposta do Gemini. Tente de novo.'); }
+  if (!txt) throw new Falha('O assistente não devolveu resposta. Tente de novo.');
+  try { return JSON.parse(txt.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch (e) { throw new Falha('Não entendi a resposta do assistente. Tente de novo.'); }
 }
 
 const ESQUEMA = {
@@ -535,14 +547,14 @@ function interpretarLocal(txt) {
   return { tipo: receita ? 'receita' : 'despesa', valor: lerValor(m[0]), descricao: desc ? desc[0].toUpperCase() + desc.slice(1) : cat(c).nome, categoria: c, data: iso(d) };
 }
 
-async function perguntar({ texto, audio, imagem }) {
+async function perguntar({ texto, audio, imagem, ditado }) {
   if (ui.ocupado) return;
-  const via = audio ? 'voz' : imagem ? 'foto' : 'texto';
+  const via = audio || ditado ? 'voz' : imagem ? 'foto' : 'texto';
   const eu = { de: 'eu', via, txt: texto || '' }, ia = { de: 'ia', pend: true };
   S.chat.push(eu, ia); ui.ocupado = true; $('#fab').classList.add('pensando'); go('assistente');
   try {
     let out;
-    if (!S.cfg.chave && texto) {
+    if (!temIA() && texto) {
       const l = interpretarLocal(texto);
       if (!l) throw new Falha('Sem o Gemini eu só entendo frases com valor, como “gastei 25 no almoço”. Para perguntas, voz e fotos, conecte sua chave gratuita.', 'Abrir Ajustes');
       out = { transcricao: texto, resposta: `Anotei ${brl(l.valor)} em ${cat(l.categoria).nome}. Com o Gemini conectado eu também entendo voz, fotos e perguntas.`, lancamentos: [l] };
@@ -589,7 +601,8 @@ function falar(txt) {
 const rec = { on: false, mr: null, partes: [], stream: null, t0: 0, timer: 0, ctx: null, raf: 0, enviar: true };
 async function iniciarGravacao() {
   if (ui.ocupado) return aviso('Aguarde a resposta anterior.');
-  if (!S.cfg.chave) { go('assistente'); return aviso('Para falar, conecte sua chave do Gemini. Por enquanto, escreva o gasto.'); }
+  if (!temIA()) { go('assistente'); return aviso('Para falar, conecte sua chave do Gemini. Por enquanto, escreva o gasto.'); }
+  if (ditar()) return iniciarDitado();
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return aviso('Este navegador não grava áudio. Escreva o gasto no assistente.');
   try { rec.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } }); }
   catch (e) { return aviso('Permita o uso do microfone para falar com o assistente.'); }
@@ -608,7 +621,37 @@ async function iniciarGravacao() {
   } catch (e) { /* medidor é opcional */ }
   if (ui.view !== 'assistente') go('assistente');
 }
-function pararGravacao(enviar) { if (!rec.on) return; rec.enviar = enviar; rec.on = false; try { rec.mr.stop(); } catch (e) { aoParar(); } }
+function pararGravacao(enviar) {
+  if (!rec.on) return; rec.enviar = enviar; rec.on = false;
+  if (rec.sr) { try { rec.sr.stop(); } catch (e) { fimDitado(); } return; }
+  try { rec.mr.stop(); } catch (e) { aoParar(); }
+}
+/* ditado do aparelho: transcreve a fala no próprio celular e envia como texto */
+function iniciarDitado() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { go('assistente'); return aviso('A voz não está disponível neste navegador. Escreva o gasto ou fotografe o cupom.'); }
+  try { speechSynthesis.cancel(); } catch (e) { /* ok */ }
+  const sr = new SR(); sr.lang = 'pt-BR'; sr.interimResults = true; sr.continuous = true;
+  rec.sr = sr; rec.texto = ''; rec.enviar = true; rec.on = true; rec.t0 = Date.now();
+  sr.onresult = e => {
+    let fim = '', parcial = '';
+    for (const r of e.results) (r.isFinal ? (fim += r[0].transcript + ' ') : (parcial += r[0].transcript));
+    rec.texto = (fim + parcial).trim(); if (rec.texto) $('#rec-label').textContent = rec.texto.length > 34 ? '…' + rec.texto.slice(-33) : rec.texto;
+  };
+  sr.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { rec.enviar = false; aviso('Permita o uso do microfone e do ditado para falar com o assistente.'); } };
+  sr.onend = fimDitado;
+  try { sr.start(); } catch (e) { rec.on = false; rec.sr = null; return aviso('Não foi possível iniciar o ditado. Escreva o gasto.'); }
+  $('#fab').classList.add('gravando'); $('#fab').setAttribute('aria-label', 'Enviar fala'); $('#rec').hidden = false; $('#rec-time').textContent = '0:00';
+  rec.timer = setInterval(() => { const s = Math.floor((Date.now() - rec.t0) / 1000); $('#rec-time').textContent = `${Math.floor(s / 60)}:${p2(s % 60)}`; if (s >= 60) pararGravacao(true); }, 250);
+  if (ui.view !== 'assistente') go('assistente');
+}
+function fimDitado() {
+  if (!rec.sr) return; rec.sr = null; rec.on = false; clearInterval(rec.timer);
+  $('#fab').classList.remove('gravando'); $('#fab').setAttribute('aria-label', 'Falar com o assistente'); $('#rec').hidden = true; $('#rec-label').textContent = 'Ouvindo';
+  if (!rec.enviar) return;
+  if (!rec.texto) return aviso('Não ouvi nada. Fale de novo ou escreva o gasto.');
+  perguntar({ texto: rec.texto, ditado: true });
+}
 async function aoParar() {
   clearInterval(rec.timer); cancelAnimationFrame(rec.raf); rec.stream?.getTracks().forEach(t => t.stop()); try { rec.ctx?.close(); } catch (e) { /* ok */ }
   $('#fab').classList.remove('gravando'); $('#fab').setAttribute('aria-label', 'Falar com o assistente'); $('#fab').style.removeProperty('--lvl'); $('#rec').hidden = true;
@@ -647,6 +690,65 @@ function dadosDeExemplo() {
   S = { ...vazio(), cfg: S.cfg, tx, contas, orc: { alimentacao: 450, mercado: 1100, transporte: 300, lazer: 250, compras: 350 }, metas: [{ id: uid(), nome: 'Reserva de emergência', alvo: 10000, atual: 3200, prazo: '', emoji: '🛟' }, { id: uid(), nome: 'Notebook novo', alvo: 4500, atual: 1350, prazo: somaMes(mk, 6), emoji: '💻' }] };
 }
 
+/* ---------- instalação: identifica o aparelho e mostra o passo a passo certo ---------- */
+const CHAVE_INST = 'grana.instalar';   // '' nunca viu, 'visto' já viu o tutorial, 'nao' pediu para não mostrar
+const lerInst = () => { try { return localStorage.getItem(CHAVE_INST) || ''; } catch (e) { return ''; } };
+const gravarInst = v => { try { localStorage.setItem(CHAVE_INST, v); } catch (e) { } };
+function aparelho(ua = navigator.userAgent || '') {
+  const ipad = /iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const iphone = /iPhone|iPod/.test(ua), ios = iphone || ipad, android = /Android/.test(ua);
+  const instalado = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+  const embutido = /Instagram|FBAN|FBAV|FB_IAB|LinkedInApp|TikTok|musical_ly|BytedanceWebview|Line\/|MicroMessenger|Snapchat|Twitter|Pinterest|GSA\//.test(ua);
+  let nav = 'outro';
+  if (ios) nav = /CriOS/.test(ua) ? 'Chrome' : /FxiOS/.test(ua) ? 'Firefox' : /EdgiOS/.test(ua) ? 'Edge' : /OPiOS|OPT\//.test(ua) ? 'Opera' : 'Safari';
+  else if (android) nav = /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Firefox/.test(ua) ? 'Firefox' : /EdgA/.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : 'Chrome';
+  // O Safari novo congela o "OS 18_x" no user agent; o número real vem em "Version/".
+  const v = Number((ua.match(/Version\/(\d+)/) || ua.match(/OS (\d+)_/) || [])[1]) || 0;
+  return { ios, iphone, ipad, android, instalado, embutido, nav, versao: ios ? v : 0, nome: iphone ? 'iPhone' : ipad ? 'iPad' : android ? 'Android' : 'computador' };
+}
+const IC = {
+  share: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M8 7l4-4 4 4M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>',
+  mais: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8.5v7M8.5 12h7"/></svg>',
+};
+function passosInstalar(ap) {
+  const add = `Role a lista e toque em <b>Adicionar à Tela de Início</b> ${IC.mais}`;
+  if (ap.embutido) return [`Este link abriu dentro de outro aplicativo, que não deixa instalar. Toque no menu <b>•••</b> e escolha <b>Abrir no ${ap.ios ? 'Safari' : 'Chrome'}</b>.`, `Se não houver essa opção, copie o link abaixo e cole no ${ap.ios ? 'Safari' : 'Chrome'}.`, 'Lá o Grana mostra de novo este passo a passo.'];
+  if (ap.ios) {
+    const fim = [add, ap.versao >= 26 ? 'Deixe ligada a opção de abrir como app e toque em <b>Adicionar</b>, no canto de cima.' : 'Toque em <b>Adicionar</b>, no canto de cima.'];
+    if (ap.nav === 'Safari') return [ap.versao >= 26
+      ? `Toque em <b>•••</b> na barra do Safari e depois em <b>Compartilhar</b> ${IC.share}<small>Se o ícone Compartilhar já aparece na barra, toque direto nele.</small>`
+      : `Toque em <b>Compartilhar</b> ${IC.share} na barra do Safari${ap.ipad ? ', no alto da tela' : ', embaixo da tela'}.<small>Não achou? Toque em ••• e depois em Compartilhar.</small>`, ...fim];
+    if (ap.nav === 'Chrome') return [`Toque em <b>Compartilhar</b> ${IC.share}, na ponta direita da barra de endereço do Chrome.`, ...fim];
+    return [`Abra o menu do ${ap.nav} e toque em <b>Compartilhar</b> ${IC.share}<small>Se não encontrar, copie o link abaixo e abra no Safari.</small>`, ...fim];
+  }
+  if (ap.android) return [`Toque no menu <b>${ap.nav === 'Samsung Internet' ? '☰' : '⋮'}</b> do ${ap.nav}.`, 'Toque em <b>Instalar app</b> ou <b>Adicionar à tela inicial</b>.', 'Confirme em <b>Instalar</b>.'];
+  return ['Para instalar no celular, abra este mesmo link no iPhone ou no Android. O Grana mostra o passo a passo do seu aparelho.', 'No computador, o Chrome e o Edge mostram um ícone de instalar na ponta direita da barra de endereço.'];
+}
+function tutorialInstalar() {
+  const ap = aparelho();
+  if (ap.instalado) return aviso('O Grana já está instalado neste aparelho.');
+  const movel = ap.ios || ap.android, direto = !!instalar && !ap.embutido;
+  const rotulo = (ap.embutido ? [ap.nome, 'aberto dentro de outro app'] : [ap.nome, movel && ap.nav !== 'outro' ? ap.nav : '', ap.nav === 'Safari' && ap.versao ? 'iOS ' + ap.versao : '']).filter(Boolean).join(' · ');
+  abrir(`<span class="inst-chip">Detectamos: ${esc(rotulo)}</span>
+  <h2>${movel ? `Instale o Grana no seu ${ap.nome}` : 'Instale o Grana'}</h2>
+  <p class="muted">${direto ? 'Um toque e ele fica na tela inicial, abre em tela cheia e funciona sem internet.' : 'Leva 10 segundos, não passa pela loja de aplicativos e ele abre em tela cheia, como qualquer app.'}</p>
+  ${direto ? '' : `<ol class="passos">${passosInstalar(ap).map(p => `<li><div>${p}</div></li>`).join('')}</ol>${movel && !ap.embutido ? `<p class="sm muted">Pronto: o ícone do Grana aparece na tela de início.</p>` : ''}`}
+  <div class="acoes">${direto ? `<button class="btn" data-a="instalar">Instalar agora</button>` : ''}${ap.embutido || !movel || (ap.ios && !['Safari', 'Chrome'].includes(ap.nav)) ? `<button class="btn" data-a="copiarLink">Copiar link</button>` : ''}<button class="btn sec" data-a="closeSheet">${direto ? 'Agora não' : 'Entendi'}</button></div>
+  ${movel ? `<p class="sm" style="margin-top:12px;text-align:center"><button class="link" data-a="instNao">Não mostrar de novo</button></p>` : ''}`);
+  if (!lerInst()) gravarInst('visto');
+}
+function faixaInstalar() {
+  const ap = aparelho();
+  if (ap.instalado || !(ap.ios || ap.android) || lerInst() === 'nao') return '';
+  return `<button class="faixa-inst" data-a="comoInstalar"><span>${IC.mais}</span><span><b>Instale o Grana no seu ${ap.nome}</b><small>Veja o passo a passo para o ${ap.embutido ? 'seu aparelho' : ap.nav}</small></span><span class="seta">›</span></button>`;
+}
+/* abre sozinho na primeira visita pelo celular */
+function oferecerInstalacao() {
+  const ap = aparelho();
+  if (ap.instalado || lerInst() || !$('#sheet').hidden || !(ap.ios || ap.android)) return;
+  tutorialInstalar();
+}
+
 /* ---------- eventos ---------- */
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-a]'); if (!el) return;
@@ -657,7 +759,7 @@ document.addEventListener('input', e => { if (e.target.id === 'busca') { ui.busc
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#sheet').hidden) fechar(); });
 $('#pick-foto').addEventListener('change', async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
-  if (!S.cfg.chave) { go('ajustes'); return aviso('Conecte sua chave do Gemini para ler cupons.'); }
+  if (!temIA()) { go('ajustes'); return aviso('Conecte sua chave do Gemini para ler cupons.'); }
   try { perguntar({ imagem: await reduzirFoto(f) }); } catch (err) { aviso('Não foi possível abrir essa foto.'); }
 });
 $('#pick-backup').addEventListener('change', async e => {
@@ -665,10 +767,13 @@ $('#pick-backup').addEventListener('change', async e => {
   try { const j = JSON.parse(await f.text()); if (!Array.isArray(j.tx)) throw 0; const chave = S.cfg.chave; S = { ...vazio(), ...j, cfg: { ...vazio().cfg, ...(j.cfg || {}), chave: j.cfg?.chave || chave } }; salvar(); aplicarTema(); go('inicio'); aviso('Backup restaurado'); }
   catch (err) { aviso('Esse arquivo não é um backup do Grana.'); }
 });
-window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); instalar = e; if (ui.view === 'ajustes') render(); });
-window.addEventListener('appinstalled', () => { instalar = null; if (ui.view === 'ajustes') render(); });
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); instalar = e; oferecerInstalacao(); });
+window.addEventListener('appinstalled', () => { instalar = null; fechar(); render(); aviso('Grana instalado'); });
 
 /* ---------- início ---------- */
 carregar(); aplicarTema(); render();
 if (location.hash === '#novo') formTx(); else if (location.hash === '#falar') go('assistente');
+/* iPhone e iPad mostram o tutorial logo; o Android espera um instante pelo botão de instalar do próprio navegador */
+fetch('api/status', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(j => { const liga = !!(j && j.assistente); servidorAudio = !!(j && j.audio); try { localStorage.setItem('grana.servidor', liga ? '1' : '0'); localStorage.setItem('grana.servidorAudio', servidorAudio ? '1' : '0'); } catch (e) { } if (liga !== servidor) { servidor = liga; if ($('#sheet').hidden && !rec.on && ui.view !== 'assistente') render(); } }).catch(() => { });
+setTimeout(oferecerInstalacao, aparelho().ios ? 700 : 3000);
 if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => { }));
