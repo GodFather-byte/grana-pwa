@@ -47,6 +47,9 @@ const MODELO_PADRAO = 'gemini-3.8-flash';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const vazio = () => ({ tx: [], orc: {}, metas: [], contas: [], chat: [], analises: {}, cfg: { chave: '', modelo: MODELO_PADRAO, falar: true, tema: 'claro' } });
 let S = vazio();
+/* quando o app é servido pelo server.js com GEMINI_API_KEY, o assistente funciona sem chave no aparelho */
+let servidor = false; try { servidor = localStorage.getItem('grana.servidor') === '1'; } catch (e) { }
+const temIA = () => servidor || !!S.cfg.chave;
 const ui = { view: 'inicio', mes: mesAtual(), aba: 'orcamentos', filtro: 'tudo', busca: '', ocupado: false };
 
 function carregar() {
@@ -138,7 +141,7 @@ function barraOrc(id, r) {
 const TELAS = {
   inicio() {
     const mk = ui.mes, r = resumo(mk), lh = livreHoje(mk), tx = doMes(mk).sort(ordem).slice(0, 5), av = avisos(mk).slice(0, 4);
-    if (!S.tx.length) return `<div class="vazio">${roseta()}<h2>Fale o que gastou</h2><p>Toque no microfone e diga, por exemplo, “gastei 32 reais no almoço”. O Grana anota, categoriza e mostra para onde o dinheiro vai.</p><div class="acoes"><button class="btn" data-a="go" data-v="ajustes">Conectar o Gemini</button><button class="btn sec" data-a="demo">Ver com dados de exemplo</button></div><p class="sm" style="margin-top:14px"><button class="link" data-a="novo">Ou anotar um gasto à mão</button></p></div>`;
+    if (!S.tx.length) return `<div class="vazio">${roseta()}<h2>Fale o que gastou</h2><p>Toque no microfone e diga, por exemplo, “gastei 32 reais no almoço”. O Grana anota, categoriza e mostra para onde o dinheiro vai.</p><div class="acoes">${temIA() ? `<button class="btn" data-a="mic">Falar um gasto</button>` : `<button class="btn" data-a="go" data-v="ajustes">Conectar o Gemini</button>`}<button class="btn sec" data-a="demo">Ver com dados de exemplo</button></div><p class="sm" style="margin-top:14px"><button class="link" data-a="novo">Ou anotar um gasto à mão</button></p></div>`;
     const orcs = Object.keys(S.orc).filter(id => S.orc[id] > 0).sort((a, b) => (r.porCat[b] || 0) / S.orc[b] - (r.porCat[a] || 0) / S.orc[a]).slice(0, 3);
     return `
     <section class="saldo">${roseta()}
@@ -169,7 +172,7 @@ const TELAS = {
       const txs = (m.ids || []).map(id => S.tx.find(t => t.id === id)).filter(Boolean);
       return `<div class="msg ia ${m.erro ? 'erro' : ''}"><p>${esc(m.txt)}</p>${txs.length ? `<div class="salvos">${txs.map(t => linhaTx(t)).join('')}</div><div class="rodape"><button class="link" data-a="desfazer" data-i="${i}">Desfazer</button><span class="muted">Toque num item para corrigir</span></div>` : ''}${m.acao ? `<div class="rodape"><button class="link" data-a="go" data-v="ajustes">${esc(m.acao)}</button></div>` : ''}</div>`;
     }).join('');
-    return `<div class="chat">${msgs || `<div class="vazio" style="padding-bottom:8px">${roseta()}<h2>Diga ou escreva</h2><p>Toque no microfone para falar, fotografe um cupom fiscal ou escreva abaixo.</p>${S.cfg.chave ? '' : `<div class="acoes"><button class="btn" data-a="go" data-v="ajustes">Conectar o Gemini</button></div>`}</div><div class="chips">${sug.map(s => `<button class="chip" data-a="sugestao">${s}</button>`).join('')}</div>`}</div>
+    return `<div class="chat">${msgs || `<div class="vazio" style="padding-bottom:8px">${roseta()}<h2>Diga ou escreva</h2><p>Toque no microfone para falar, fotografe um cupom fiscal ou escreva abaixo.</p>${temIA() ? '' : `<div class="acoes"><button class="btn" data-a="go" data-v="ajustes">Conectar o Gemini</button></div>`}</div><div class="chips">${sug.map(s => `<button class="chip" data-a="sugestao">${s}</button>`).join('')}</div>`}</div>
     <form class="compor" data-form="pergunta"><button type="button" class="ico" data-a="foto" aria-label="Fotografar cupom fiscal">${I.foto}</button><input name="q" autocomplete="off" placeholder="Escreva um gasto ou uma pergunta" aria-label="Mensagem"><button class="ico env" aria-label="Enviar">${I.enviar}</button></form>`;
   },
 
@@ -223,9 +226,9 @@ const TELAS = {
     const c = S.cfg;
     return `
     <section class="bloco" style="margin-top:6px"><h2>Assistente de voz</h2><div class="cartao pad">
-      <p class="sm muted">A voz e as fotos são interpretadas pelo Gemini, do Google. Crie uma chave gratuita em <a class="link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> e cole aqui.</p>
+      ${servidor ? `<p class="aviso bom" style="margin-bottom:10px">O assistente já está conectado. Não é preciso chave.</p><p class="sm muted">A voz e as fotos são interpretadas pelo Gemini, do Google. Se preferir usar a sua própria chave, crie uma em <a class="link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> e cole aqui.</p>` : `<p class="sm muted">A voz e as fotos são interpretadas pelo Gemini, do Google. Crie uma chave gratuita em <a class="link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> e cole aqui.</p>`}
       <form data-form="cfg">
-        <label class="campo">Chave da API do Gemini<input name="chave" type="password" autocomplete="off" value="${esc(c.chave)}" placeholder="AIza..."></label>
+        <label class="campo">Chave da API do Gemini${servidor ? ' (opcional)' : ''}<input name="chave" type="password" autocomplete="off" value="${esc(c.chave)}" placeholder="AIza..."></label>
         <label class="campo">Modelo<input name="modelo" list="modelos" value="${esc(c.modelo)}" autocomplete="off"></label><datalist id="modelos"></datalist>
         <div class="acoes"><button class="btn">Salvar chave</button><button type="button" class="btn sec" data-a="testar">Testar conexão</button></div>
       </form></div>
@@ -403,7 +406,7 @@ const A = {
   tema: () => { S.cfg.tema = S.cfg.tema === 'escuro' ? 'claro' : 'escuro'; salvar(); aplicarTema(); render(); },
   async testar(d, el) {
     const f = el.closest('form'); S.cfg.chave = f.chave.value.trim(); S.cfg.modelo = f.modelo.value.trim() || MODELO_PADRAO; salvar();
-    if (!S.cfg.chave) return aviso('Cole a chave primeiro.');
+    if (!temIA()) return aviso('Cole a chave primeiro.');
     el.disabled = true;
     try {
       const ms = await listarModelos(); $('#modelos').innerHTML = ms.map(m => `<option value="${esc(m)}">`).join('');
@@ -438,13 +441,16 @@ class Falha extends Error { constructor(msg, acao) { super(msg); this.acao = aca
 async function chamar(caminho, corpo) {
   if (!navigator.onLine) throw new Falha('Sem internet. O assistente precisa de conexão; os lançamentos à mão continuam funcionando.');
   let r;
-  try { r = await fetch(`${API}/${caminho}`, { method: corpo ? 'POST' : 'GET', headers: { 'x-goog-api-key': S.cfg.chave, ...(corpo ? { 'Content-Type': 'application/json' } : {}) }, body: corpo ? JSON.stringify(corpo) : undefined }); }
+  const proprio = !!S.cfg.chave;   // quem colou a própria chave fala direto com o Gemini
+  try { r = await fetch(`${proprio ? API : 'api/gemini'}/${caminho}`, { method: corpo ? 'POST' : 'GET', headers: { ...(proprio ? { 'x-goog-api-key': S.cfg.chave } : {}), ...(corpo ? { 'Content-Type': 'application/json' } : {}) }, body: corpo ? JSON.stringify(corpo) : undefined }); }
   catch (e) { throw new Falha('Não foi possível falar com o Gemini. Confira a internet e tente de novo.'); }
   if (r.ok) return r.json();
   let msg = ''; try { msg = (await r.json()).error?.message || ''; } catch (e) { /* sem corpo */ }
   if (r.status === 404) { const e = new Falha('Modelo não encontrado.'); e.status = 404; throw e; }
+  if (!proprio && r.status === 429 && /demonstração/.test(msg)) throw new Falha('O limite de uso desta demonstração foi atingido. Tente de novo daqui a alguns minutos.');
+  if (!proprio && r.status === 503) throw new Falha(msg || 'O assistente está indisponível agora.');
   if (r.status === 400 && /api key/i.test(msg) || r.status === 401 || r.status === 403) throw new Falha('A chave do Gemini não foi aceita. Confira a chave nos Ajustes.', 'Abrir Ajustes');
-  if (r.status === 429) throw new Falha('O limite de uso da sua chave do Gemini foi atingido. Espere um minuto e tente de novo.');
+  if (r.status === 429) throw new Falha(proprio ? 'O limite de uso da sua chave do Gemini foi atingido. Espere um minuto e tente de novo.' : 'O assistente está com muitos pedidos agora. Espere um minuto e tente de novo.');
   if (r.status >= 500) throw new Falha('O Gemini está indisponível agora. Tente de novo em instantes.');
   throw new Falha('O Gemini recusou o pedido: ' + (msg || 'erro ' + r.status));
 }
@@ -457,7 +463,7 @@ function melhorModelo(ms) {
   return [...ms].sort((a, b) => nota(b) - nota(a)).find(n => nota(n) >= 0) || ms.find(n => /flash/.test(n)) || ms[0];
 }
 async function gemini(partes, esquema, sistema) {
-  if (!S.cfg.chave) throw new Falha('Para usar a voz, conecte sua chave gratuita do Gemini.', 'Abrir Ajustes');
+  if (!temIA()) throw new Falha('Para usar a voz, conecte sua chave gratuita do Gemini.', 'Abrir Ajustes');
   const corpo = { systemInstruction: { parts: [{ text: sistema }] }, contents: [{ role: 'user', parts: partes }], generationConfig: { temperature: 0.2, responseMimeType: 'application/json', responseSchema: esquema } };
   let j;
   try { j = await chamar(`models/${encodeURIComponent(S.cfg.modelo || MODELO_PADRAO)}:generateContent`, corpo); }
@@ -545,7 +551,7 @@ async function perguntar({ texto, audio, imagem }) {
   S.chat.push(eu, ia); ui.ocupado = true; $('#fab').classList.add('pensando'); go('assistente');
   try {
     let out;
-    if (!S.cfg.chave && texto) {
+    if (!temIA() && texto) {
       const l = interpretarLocal(texto);
       if (!l) throw new Falha('Sem o Gemini eu só entendo frases com valor, como “gastei 25 no almoço”. Para perguntas, voz e fotos, conecte sua chave gratuita.', 'Abrir Ajustes');
       out = { transcricao: texto, resposta: `Anotei ${brl(l.valor)} em ${cat(l.categoria).nome}. Com o Gemini conectado eu também entendo voz, fotos e perguntas.`, lancamentos: [l] };
@@ -592,7 +598,7 @@ function falar(txt) {
 const rec = { on: false, mr: null, partes: [], stream: null, t0: 0, timer: 0, ctx: null, raf: 0, enviar: true };
 async function iniciarGravacao() {
   if (ui.ocupado) return aviso('Aguarde a resposta anterior.');
-  if (!S.cfg.chave) { go('assistente'); return aviso('Para falar, conecte sua chave do Gemini. Por enquanto, escreva o gasto.'); }
+  if (!temIA()) { go('assistente'); return aviso('Para falar, conecte sua chave do Gemini. Por enquanto, escreva o gasto.'); }
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return aviso('Este navegador não grava áudio. Escreva o gasto no assistente.');
   try { rec.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } }); }
   catch (e) { return aviso('Permita o uso do microfone para falar com o assistente.'); }
@@ -719,7 +725,7 @@ document.addEventListener('input', e => { if (e.target.id === 'busca') { ui.busc
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#sheet').hidden) fechar(); });
 $('#pick-foto').addEventListener('change', async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
-  if (!S.cfg.chave) { go('ajustes'); return aviso('Conecte sua chave do Gemini para ler cupons.'); }
+  if (!temIA()) { go('ajustes'); return aviso('Conecte sua chave do Gemini para ler cupons.'); }
   try { perguntar({ imagem: await reduzirFoto(f) }); } catch (err) { aviso('Não foi possível abrir essa foto.'); }
 });
 $('#pick-backup').addEventListener('change', async e => {
@@ -734,5 +740,6 @@ window.addEventListener('appinstalled', () => { instalar = null; fechar(); rende
 carregar(); aplicarTema(); render();
 if (location.hash === '#novo') formTx(); else if (location.hash === '#falar') go('assistente');
 /* iPhone e iPad mostram o tutorial logo; o Android espera um instante pelo botão de instalar do próprio navegador */
+fetch('api/status', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(j => { const liga = !!(j && j.assistente); try { localStorage.setItem('grana.servidor', liga ? '1' : '0'); } catch (e) { } if (liga !== servidor) { servidor = liga; if ($('#sheet').hidden && !rec.on && ui.view !== 'assistente') render(); } }).catch(() => { });
 setTimeout(oferecerInstalacao, aparelho().ios ? 700 : 3000);
 if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => { }));

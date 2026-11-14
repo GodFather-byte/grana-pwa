@@ -1,6 +1,6 @@
 # Grana — controle de gastos por voz (PWA)
 
-Aplicativo de finanças pessoais que roda inteiro no navegador. Você fala (ou escreve, ou fotografa um cupom) e o Gemini transforma em lançamentos categorizados. Sem backend, sem build: são arquivos estáticos.
+Aplicativo de finanças pessoais que roda inteiro no navegador. Você fala (ou escreve, ou fotografa um cupom) e o Gemini transforma em lançamentos categorizados. Sem build: são arquivos estáticos, com um servidor opcional que guarda a chave do Gemini.
 
 ## O que tem
 
@@ -30,6 +30,18 @@ npx serve .          # ou: python3 -m http.server 8080
 - **Vercel / Cloudflare Pages**: importe o repositório; não há comando de build.
 
 Ao publicar uma nova versão, mude `VERSAO` em `sw.js` (ex.: `grana-v2`) para os aparelhos baixarem os arquivos novos.
+
+## Assistente sem chave no aparelho (servidor)
+
+Para quem abre o link usar a voz sem configurar nada, publique com o `server.js` (Node 18+, sem dependências). Ele entrega o app e repassa as chamadas ao Gemini; a chave fica só no servidor.
+
+```bash
+GEMINI_API_KEY=sua-chave node server.js    # http://localhost:8080
+```
+
+No Render: Web Service, runtime Node, start command `node server.js`, e a variável `GEMINI_API_KEY` em Environment. Nunca coloque a chave no código.
+
+O servidor só aceita pedidos vindos da própria página, só repassa `generateContent` e a lista de modelos, e limita o uso: 40 pedidos por aparelho a cada 10 minutos, 200 por aparelho por dia e 1500 no total por dia (ajustáveis com `LIMITE_IP_10MIN`, `LIMITE_IP_DIA` e `LIMITE_TOTAL_DIA`). Sem `GEMINI_API_KEY`, o app funciona como antes, com a chave colada em Ajustes.
 
 ## Chave do Gemini
 

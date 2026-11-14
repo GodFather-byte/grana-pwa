@@ -1,5 +1,5 @@
 /* Grana — service worker: deixa o app abrir sem internet. Mude VERSAO a cada publicação. */
-const VERSAO = 'grana-v2';
+const VERSAO = 'grana-v3';
 const ARQUIVOS = ['./', 'index.html', 'css/app.css', 'js/app.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -15,6 +15,7 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;                                   // chamadas ao Gemini passam direto
   const fonte = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
   if (url.origin !== location.origin && !fonte) return;
+  if (url.origin === location.origin && url.pathname.includes('/api/')) return;   // servidor do assistente: nunca em cache
 
   e.respondWith(caches.open(VERSAO).then(async cache => {
     const guardado = await cache.match(req, { ignoreSearch: url.origin === location.origin });
