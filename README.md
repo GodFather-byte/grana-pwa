@@ -33,15 +33,26 @@ Ao publicar uma nova versão, mude `VERSAO` em `sw.js` (ex.: `grana-v2`) para os
 
 ## Assistente sem chave no aparelho (servidor)
 
-Para quem abre o link usar a voz sem configurar nada, publique com o `server.js` (Node 18+, sem dependências). Ele entrega o app e repassa as chamadas ao Gemini; a chave fica só no servidor.
+Para quem abre o link usar o assistente sem configurar nada, publique com o `server.js` (Node 18+). Ele entrega o app e atende o assistente; as chaves ficam só no servidor, em variáveis de ambiente.
 
 ```bash
-GEMINI_API_KEY=sua-chave node server.js    # http://localhost:8080
+npm install
+ANTHROPIC_API_KEY=sua-chave GEMINI_API_KEY=sua-chave node server.js    # http://localhost:8080
 ```
 
-No Render: Web Service, runtime Node, start command `node server.js`, e a variável `GEMINI_API_KEY` em Environment. Nunca coloque a chave no código.
+| Variáveis definidas | Texto, foto de cupom e análise | Voz |
+|---|---|---|
+| `ANTHROPIC_API_KEY` e `GEMINI_API_KEY` | Claude | Gemini (áudio gravado) |
+| só `ANTHROPIC_API_KEY` | Claude | ditado do próprio aparelho, quando o navegador oferece |
+| só `GEMINI_API_KEY` | Gemini | Gemini (áudio gravado) |
 
-O servidor só aceita pedidos vindos da própria página, só repassa `generateContent` e a lista de modelos, e limita o uso: 40 pedidos por aparelho a cada 10 minutos, 200 por aparelho por dia e 1500 no total por dia (ajustáveis com `LIMITE_IP_10MIN`, `LIMITE_IP_DIA` e `LIMITE_TOTAL_DIA`). Sem `GEMINI_API_KEY`, o app funciona como antes, com a chave colada em Ajustes.
+A API do Claude não recebe áudio, por isso a voz usa o Gemini ou o ditado do aparelho. O ditado depende do navegador e pode não existir no app instalado no iPhone; para a voz funcionar em qualquer aparelho, defina também `GEMINI_API_KEY`.
+
+No Render: Web Service, runtime Node, build command `npm install`, start command `node server.js`, e as chaves em Environment. Nunca coloque uma chave no código.
+
+O modelo do Claude é `claude-opus-5-5` (troque com `GRANA_MODELO`) e o esforço de raciocínio é `low` (troque com `GRANA_ESFORCO`).
+
+O servidor só aceita pedidos vindos da própria página e limita o uso: 40 pedidos por aparelho a cada 10 minutos, 200 por aparelho por dia e 1500 no total por dia (ajustáveis com `LIMITE_IP_10MIN`, `LIMITE_IP_DIA` e `LIMITE_TOTAL_DIA`). Sem nenhuma chave no servidor, o app funciona como antes, com a chave do Gemini colada em Ajustes.
 
 ## Chave do Gemini
 

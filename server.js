@@ -1,12 +1,21 @@
-/* Grana — servidor: entrega o app e repassa as chamadas ao Gemini.
-   A chave fica só aqui, na variável de ambiente GEMINI_API_KEY; o navegador nunca a recebe. Sem dependências (Node 18+). */
+/* Grana — servidor: entrega o app e atende o assistente. As chaves ficam só aqui, em variáveis de
+   ambiente; o navegador nunca as recebe.
+   ANTHROPIC_API_KEY  texto, fotos de cupom e análise do mês vão para o Claude.
+   GEMINI_API_KEY     áudio vai para o Gemini (o Claude não recebe áudio). Sem a chave do Claude, tudo vai para o Gemini.
+   Com só a chave do Claude, a voz depende do ditado do próprio aparelho. */
 'use strict';
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+let Anthropic = null; try { Anthropic = require('@anthropic-ai/sdk'); } catch (e) { /* sem npm install: o servidor sobe só com o Gemini */ }
 
 const PORTA = Number(process.env.PORT) || 8080;
 const CHAVE = (process.env.GEMINI_API_KEY || '').trim();
+const TEM_CLAUDE = !!(process.env.ANTHROPIC_API_KEY || '').trim();
+const MODELO_CLAUDE = (process.env.GRANA_MODELO || '').trim() || 'claude-opus-5-5';
+const ESFORCO = (process.env.GRANA_ESFORCO || '').trim() || 'low';   // pedidos curtos: resposta rápida
+const claude = TEM_CLAUDE && Anthropic ? new Anthropic({ timeout: 90000, maxRetries: 1 }) : null;   // lê ANTHROPIC_API_KEY do ambiente
+if (TEM_CLAUDE && !Anthropic) console.error('ANTHROPIC_API_KEY definida, mas o pacote @anthropic-ai/sdk não está instalado. Rode "npm install" (no Render: Build Command).');
 const GEMINI = 'https://generativelanguage.googleapis.com/v1beta';
 const num = (v, padrao) => Number(v) > 0 ? Number(v) : padrao;
 const LIMITES = {
@@ -57,16 +66,69 @@ function lerCorpo(req) {
   });
 }
 
-/* ---------- repasse ao Gemini: só listar modelos e generateContent ---------- */
+/* ---------- Claude: o app fala no formato do Gemini; aqui o pedido é traduzido e a resposta devolvida no mesmo formato ---------- */
+function esquemaJson(e) {
+  if (!e || typeof e !== 'object') return e;
+  const o = { type: String(e.type || 'string').toLowerCase() };
+  if (e.description) o.description = e.description;
+  if (e.enum) o.enum = e.enum;
+  if (e.items) o.items = esquemaJson(e.items);
+  if (o.type === 'object') {
+    o.properties = Object.fromEntries(Object.entries(e.properties || {}).map(([k, v]) => [k, esquemaJson(v)]));
+    o.required = e.required || []; o.additionalProperties = false;
+  }
+  return o;
+}
+const IMAGENS = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+async function viaClaude(res, pedido) {
+  const partes = pedido.contents?.[0]?.parts || [], conteudo = [];
+  for (const p of partes) {   // imagem antes do texto
+    if (p.inlineData && IMAGENS.includes(p.inlineData.mimeType)) conteudo.unshift({ type: 'image', source: { type: 'base64', media_type: p.inlineData.mimeType, data: p.inlineData.data } });
+    else if (typeof p.text === 'string') conteudo.push({ type: 'text', text: p.text });
+  }
+  if (!conteudo.length) return recusa(res, 400, 'Pedido vazio.');
+  const esquema = pedido.generationConfig?.responseSchema;
+  let r;
+  try {
+    r = await claude.beta.messages.create({
+      model: MODELO_CLAUDE, max_tokens: 16000,
+      // se o modelo recusar por política de segurança, a API tenta de novo em outro modelo
+      betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+      system: pedido.systemInstruction?.parts?.[0]?.text || undefined,
+      output_config: { effort: ESFORCO, ...(esquema ? { format: { type: 'json_schema', schema: esquemaJson(esquema) } } : {}) },
+      messages: [{ role: 'user', content: conteudo }],
+    });
+  } catch (e) {
+    if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) { console.error('Claude recusou a chave do servidor:', e.status); return recusa(res, 503, 'O assistente está sem acesso ao Claude no momento.'); }
+    if (e instanceof Anthropic.RateLimitError) return recusa(res, 429, 'O assistente está com muitos pedidos agora.');
+    if (e instanceof Anthropic.BadRequestError) { console.error('Claude rejeitou o pedido:', e.message); return recusa(res, 503, 'O assistente não conseguiu processar o pedido.'); }   // inclui crédito esgotado
+    if (e instanceof Anthropic.APIConnectionError) return recusa(res, 502, 'Não foi possível falar com o Claude.');
+    if (e instanceof Anthropic.APIError) { console.error('Erro do Claude:', e.status, e.message); return recusa(res, e.status >= 500 ? 502 : 503, 'O assistente está indisponível agora.'); }
+    throw e;
+  }
+  if (r.stop_reason === 'refusal') return recusa(res, 422, 'O assistente não pode ajudar com esse pedido.');
+  if (r.stop_reason === 'max_tokens') return recusa(res, 502, 'A resposta ficou longa demais. Tente de novo.');
+  const texto = r.content.filter(b => b.type === 'text').map(b => b.text).join('');
+  json(res, 200, { candidates: [{ content: { parts: [{ text: texto }] } }], modelo: r.model });
+}
+
+/* ---------- assistente: só listar modelos e generateContent ---------- */
 async function repassar(req, res, resto, busca) {
-  if (!CHAVE) return recusa(res, 503, 'O assistente não está configurado neste servidor.');
+  if (!CHAVE && !claude) return recusa(res, 503, 'O assistente não está configurado neste servidor.');
   if (!mesmaOrigem(req)) return recusa(res, 403, 'Origem não permitida.');
   const listar = req.method === 'GET' && resto === 'models';
   const gerar = req.method === 'POST' && /^models\/gemini-[\w.-]+:generateContent$/.test(resto);
   if (!listar && !gerar) return recusa(res, 404, 'Rota não disponível.');
   if (!dentroDoLimite(ipDe(req))) return recusa(res, 429, 'Limite de uso da demonstração atingido.');
+  if (listar && !CHAVE) return json(res, 200, { models: [] });
   let corpo;
-  if (gerar) { try { corpo = await lerCorpo(req); } catch (e) { return recusa(res, 413, 'Arquivo grande demais.'); } }
+  if (gerar) {
+    try { corpo = await lerCorpo(req); } catch (e) { return recusa(res, 413, 'Arquivo grande demais.'); }
+    let pedido; try { pedido = JSON.parse(corpo.toString()); } catch (e) { return recusa(res, 400, 'Pedido inválido.'); }
+    const temAudio = (pedido.contents?.[0]?.parts || []).some(p => /^audio\//.test(p.inlineData?.mimeType || ''));
+    if (claude && !temAudio) return viaClaude(res, pedido);
+    if (!CHAVE) return recusa(res, 400, 'Este servidor não recebe áudio. Escreva o gasto.');
+  }
   let r;
   try { r = await fetch(`${GEMINI}/${resto}${listar ? '?pageSize=' + (Number(busca.get('pageSize')) || 200) : ''}`, { method: req.method, headers: { 'x-goog-api-key': CHAVE, ...(gerar ? { 'Content-Type': 'application/json' } : {}) }, body: corpo, signal: AbortSignal.timeout(90000) }); }
   catch (e) { return recusa(res, 502, 'Não foi possível falar com o Gemini.'); }
@@ -79,8 +141,8 @@ async function repassar(req, res, resto, busca) {
 http.createServer((req, res) => {
   let url; try { url = new URL(req.url, 'http://x'); } catch (e) { return texto(res, 400, 'Pedido inválido'); }
   const p = url.pathname;
-  if (p === '/api/status') return json(res, 200, { assistente: !!CHAVE });
+  if (p === '/api/status') return json(res, 200, { assistente: !!(CHAVE || claude), audio: !!CHAVE });
   if (p.startsWith('/api/gemini/')) return repassar(req, res, p.slice('/api/gemini/'.length), url.searchParams).catch(e => { console.error(e); if (!res.headersSent) recusa(res, 500, 'Erro no servidor.'); });
   if (req.method !== 'GET' && req.method !== 'HEAD') return texto(res, 405, 'Método não permitido');
   arquivo(req, res, p);
-}).listen(PORTA, () => console.log(`Grana em http://localhost:${PORTA} — assistente ${CHAVE ? 'ligado' : 'desligado (defina GEMINI_API_KEY)'}`));
+}).listen(PORTA, () => console.log(`Grana em http://localhost:${PORTA} — ${claude ? `Claude (${MODELO_CLAUDE}) ligado` : 'Claude desligado'}, ${CHAVE ? 'Gemini ligado' : 'Gemini desligado'}`));

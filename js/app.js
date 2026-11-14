@@ -48,7 +48,9 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const vazio = () => ({ tx: [], orc: {}, metas: [], contas: [], chat: [], analises: {}, cfg: { chave: '', modelo: MODELO_PADRAO, falar: true, tema: 'claro' } });
 let S = vazio();
 /* quando o app é servido pelo server.js com GEMINI_API_KEY, o assistente funciona sem chave no aparelho */
-let servidor = false; try { servidor = localStorage.getItem('grana.servidor') === '1'; } catch (e) { }
+let servidor = false, servidorAudio = false; try { servidor = localStorage.getItem('grana.servidor') === '1'; servidorAudio = localStorage.getItem('grana.servidorAudio') === '1'; } catch (e) { }
+/* servidor só com Claude não recebe áudio: a fala é transcrita pelo ditado do aparelho e segue como texto */
+const ditar = () => servidor && !servidorAudio && !S.cfg.chave;
 const temIA = () => servidor || !!S.cfg.chave;
 const ui = { view: 'inicio', mes: mesAtual(), aba: 'orcamentos', filtro: 'tudo', busca: '', ocupado: false };
 
@@ -217,7 +219,7 @@ const TELAS = {
     <section class="bloco"><h2>Ritmo de gastos</h2><div class="cartao pad">${linhaAcumulada(mk)}<div class="legenda"><span><i style="background:var(--neg)"></i>${nomeMes(mk, true)}</span><span><i style="background:var(--ink2);opacity:.45"></i>${nomeMes(somaMes(mk, -1), true)}</span></div></div></section>
     <section class="bloco"><h2>Últimos 6 meses</h2><div class="cartao pad">${barras6(mk)}<div class="legenda"><span><i style="background:var(--pos)"></i>Receitas</span><span><i style="background:var(--neg)"></i>Despesas</span></div></div></section>
     <section class="bloco"><h2>Análise do assistente</h2>
-      ${an ? `<div class="cartao pad analise"><p>${esc(an.resumo)}</p>${an.pontos?.length ? `<ul>${an.pontos.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}${an.sugestoes?.length ? `<p><b>O que fazer</b></p><ul>${an.sugestoes.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}</div>` : `<p class="muted">O Gemini lê os números de ${nomeMes(mk)} e aponta onde dá para economizar.</p>`}
+      ${an ? `<div class="cartao pad analise"><p>${esc(an.resumo)}</p>${an.pontos?.length ? `<ul>${an.pontos.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}${an.sugestoes?.length ? `<p><b>O que fazer</b></p><ul>${an.sugestoes.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}</div>` : `<p class="muted">O assistente lê os números de ${nomeMes(mk)} e aponta onde dá para economizar.</p>`}
       <div class="acoes"><button class="btn ${an ? 'sec' : ''} cheio" data-a="analisar" ${ui.ocupado ? 'disabled' : ''}>${ui.ocupado ? 'Analisando' : an ? 'Analisar de novo' : 'Analisar este mês'}</button></div>
     </section>`;
   },
@@ -226,7 +228,7 @@ const TELAS = {
     const c = S.cfg;
     return `
     <section class="bloco" style="margin-top:6px"><h2>Assistente de voz</h2><div class="cartao pad">
-      ${servidor ? `<p class="aviso bom" style="margin-bottom:10px">O assistente já está conectado. Não é preciso chave.</p><p class="sm muted">A voz e as fotos são interpretadas pelo Gemini, do Google. Se preferir usar a sua própria chave, crie uma em <a class="link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> e cole aqui.</p>` : `<p class="sm muted">A voz e as fotos são interpretadas pelo Gemini, do Google. Crie uma chave gratuita em <a class="link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> e cole aqui.</p>`}
+      ${servidor ? `<p class="aviso bom" style="margin-bottom:10px">O assistente já está conectado. Não é preciso chave.</p><p class="sm muted">Se preferir usar a sua própria chave do Gemini, crie uma em <a class="link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> e cole aqui.</p>` : `<p class="sm muted">A voz e as fotos são interpretadas pelo Gemini, do Google. Crie uma chave gratuita em <a class="link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> e cole aqui.</p>`}
       <form data-form="cfg">
         <label class="campo">Chave da API do Gemini${servidor ? ' (opcional)' : ''}<input name="chave" type="password" autocomplete="off" value="${esc(c.chave)}" placeholder="AIza..."></label>
         <label class="campo">Modelo<input name="modelo" list="modelos" value="${esc(c.modelo)}" autocomplete="off"></label><datalist id="modelos"></datalist>
@@ -243,7 +245,7 @@ const TELAS = {
       <button class="btn sec cheio" data-a="csv">Exportar lançamentos para planilha (CSV)</button>
       <button class="btn sec" data-a="demo">Carregar dados de exemplo</button><button class="btn perigo" data-a="apagar">Apagar tudo</button>
     </div>
-    <p class="sm muted" style="margin-top:14px">Seus lançamentos ficam guardados só neste aparelho. O áudio, as fotos e um resumo dos seus números são enviados ao Gemini apenas quando você usa o assistente.</p></section>`;
+    <p class="sm muted" style="margin-top:14px">Seus lançamentos ficam guardados só neste aparelho. O áudio, as fotos e um resumo dos seus números são enviados ao serviço de IA do assistente (Claude ou Gemini) apenas quando você o usa.</p></section>`;
   },
 };
 
@@ -407,6 +409,7 @@ const A = {
   async testar(d, el) {
     const f = el.closest('form'); S.cfg.chave = f.chave.value.trim(); S.cfg.modelo = f.modelo.value.trim() || MODELO_PADRAO; salvar();
     if (!temIA()) return aviso('Cole a chave primeiro.');
+    if (!S.cfg.chave) return aviso('O assistente já está conectado. Não é preciso chave.');
     el.disabled = true;
     try {
       const ms = await listarModelos(); $('#modelos').innerHTML = ms.map(m => `<option value="${esc(m)}">`).join('');
@@ -443,7 +446,7 @@ async function chamar(caminho, corpo) {
   let r;
   const proprio = !!S.cfg.chave;   // quem colou a própria chave fala direto com o Gemini
   try { r = await fetch(`${proprio ? API : 'api/gemini'}/${caminho}`, { method: corpo ? 'POST' : 'GET', headers: { ...(proprio ? { 'x-goog-api-key': S.cfg.chave } : {}), ...(corpo ? { 'Content-Type': 'application/json' } : {}) }, body: corpo ? JSON.stringify(corpo) : undefined }); }
-  catch (e) { throw new Falha('Não foi possível falar com o Gemini. Confira a internet e tente de novo.'); }
+  catch (e) { throw new Falha('Não foi possível falar com o assistente. Confira a internet e tente de novo.'); }
   if (r.ok) return r.json();
   let msg = ''; try { msg = (await r.json()).error?.message || ''; } catch (e) { /* sem corpo */ }
   if (r.status === 404) { const e = new Falha('Modelo não encontrado.'); e.status = 404; throw e; }
@@ -451,8 +454,8 @@ async function chamar(caminho, corpo) {
   if (!proprio && r.status === 503) throw new Falha(msg || 'O assistente está indisponível agora.');
   if (r.status === 400 && /api key/i.test(msg) || r.status === 401 || r.status === 403) throw new Falha('A chave do Gemini não foi aceita. Confira a chave nos Ajustes.', 'Abrir Ajustes');
   if (r.status === 429) throw new Falha(proprio ? 'O limite de uso da sua chave do Gemini foi atingido. Espere um minuto e tente de novo.' : 'O assistente está com muitos pedidos agora. Espere um minuto e tente de novo.');
-  if (r.status >= 500) throw new Falha('O Gemini está indisponível agora. Tente de novo em instantes.');
-  throw new Falha('O Gemini recusou o pedido: ' + (msg || 'erro ' + r.status));
+  if (r.status >= 500) throw new Falha('O assistente está indisponível agora. Tente de novo em instantes.');
+  throw new Falha(proprio ? 'O Gemini recusou o pedido: ' + (msg || 'erro ' + r.status) : msg || 'O assistente não conseguiu atender. Tente de novo.');
 }
 async function listarModelos() {
   const j = await chamar('models?pageSize=200');
@@ -473,8 +476,8 @@ async function gemini(partes, esquema, sistema) {
     S.cfg.modelo = m; salvar(); j = await chamar(`models/${encodeURIComponent(m)}:generateContent`, corpo);
   }
   const txt = (j.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('');
-  if (!txt) throw new Falha('O Gemini não devolveu resposta. Tente de novo.');
-  try { return JSON.parse(txt.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch (e) { throw new Falha('Não entendi a resposta do Gemini. Tente de novo.'); }
+  if (!txt) throw new Falha('O assistente não devolveu resposta. Tente de novo.');
+  try { return JSON.parse(txt.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch (e) { throw new Falha('Não entendi a resposta do assistente. Tente de novo.'); }
 }
 
 const ESQUEMA = {
@@ -544,9 +547,9 @@ function interpretarLocal(txt) {
   return { tipo: receita ? 'receita' : 'despesa', valor: lerValor(m[0]), descricao: desc ? desc[0].toUpperCase() + desc.slice(1) : cat(c).nome, categoria: c, data: iso(d) };
 }
 
-async function perguntar({ texto, audio, imagem }) {
+async function perguntar({ texto, audio, imagem, ditado }) {
   if (ui.ocupado) return;
-  const via = audio ? 'voz' : imagem ? 'foto' : 'texto';
+  const via = audio || ditado ? 'voz' : imagem ? 'foto' : 'texto';
   const eu = { de: 'eu', via, txt: texto || '' }, ia = { de: 'ia', pend: true };
   S.chat.push(eu, ia); ui.ocupado = true; $('#fab').classList.add('pensando'); go('assistente');
   try {
@@ -599,6 +602,7 @@ const rec = { on: false, mr: null, partes: [], stream: null, t0: 0, timer: 0, ct
 async function iniciarGravacao() {
   if (ui.ocupado) return aviso('Aguarde a resposta anterior.');
   if (!temIA()) { go('assistente'); return aviso('Para falar, conecte sua chave do Gemini. Por enquanto, escreva o gasto.'); }
+  if (ditar()) return iniciarDitado();
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return aviso('Este navegador não grava áudio. Escreva o gasto no assistente.');
   try { rec.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } }); }
   catch (e) { return aviso('Permita o uso do microfone para falar com o assistente.'); }
@@ -617,7 +621,37 @@ async function iniciarGravacao() {
   } catch (e) { /* medidor é opcional */ }
   if (ui.view !== 'assistente') go('assistente');
 }
-function pararGravacao(enviar) { if (!rec.on) return; rec.enviar = enviar; rec.on = false; try { rec.mr.stop(); } catch (e) { aoParar(); } }
+function pararGravacao(enviar) {
+  if (!rec.on) return; rec.enviar = enviar; rec.on = false;
+  if (rec.sr) { try { rec.sr.stop(); } catch (e) { fimDitado(); } return; }
+  try { rec.mr.stop(); } catch (e) { aoParar(); }
+}
+/* ditado do aparelho: transcreve a fala no próprio celular e envia como texto */
+function iniciarDitado() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { go('assistente'); return aviso('A voz não está disponível neste navegador. Escreva o gasto ou fotografe o cupom.'); }
+  try { speechSynthesis.cancel(); } catch (e) { /* ok */ }
+  const sr = new SR(); sr.lang = 'pt-BR'; sr.interimResults = true; sr.continuous = true;
+  rec.sr = sr; rec.texto = ''; rec.enviar = true; rec.on = true; rec.t0 = Date.now();
+  sr.onresult = e => {
+    let fim = '', parcial = '';
+    for (const r of e.results) (r.isFinal ? (fim += r[0].transcript + ' ') : (parcial += r[0].transcript));
+    rec.texto = (fim + parcial).trim(); if (rec.texto) $('#rec-label').textContent = rec.texto.length > 34 ? '…' + rec.texto.slice(-33) : rec.texto;
+  };
+  sr.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { rec.enviar = false; aviso('Permita o uso do microfone e do ditado para falar com o assistente.'); } };
+  sr.onend = fimDitado;
+  try { sr.start(); } catch (e) { rec.on = false; rec.sr = null; return aviso('Não foi possível iniciar o ditado. Escreva o gasto.'); }
+  $('#fab').classList.add('gravando'); $('#fab').setAttribute('aria-label', 'Enviar fala'); $('#rec').hidden = false; $('#rec-time').textContent = '0:00';
+  rec.timer = setInterval(() => { const s = Math.floor((Date.now() - rec.t0) / 1000); $('#rec-time').textContent = `${Math.floor(s / 60)}:${p2(s % 60)}`; if (s >= 60) pararGravacao(true); }, 250);
+  if (ui.view !== 'assistente') go('assistente');
+}
+function fimDitado() {
+  if (!rec.sr) return; rec.sr = null; rec.on = false; clearInterval(rec.timer);
+  $('#fab').classList.remove('gravando'); $('#fab').setAttribute('aria-label', 'Falar com o assistente'); $('#rec').hidden = true; $('#rec-label').textContent = 'Ouvindo';
+  if (!rec.enviar) return;
+  if (!rec.texto) return aviso('Não ouvi nada. Fale de novo ou escreva o gasto.');
+  perguntar({ texto: rec.texto, ditado: true });
+}
 async function aoParar() {
   clearInterval(rec.timer); cancelAnimationFrame(rec.raf); rec.stream?.getTracks().forEach(t => t.stop()); try { rec.ctx?.close(); } catch (e) { /* ok */ }
   $('#fab').classList.remove('gravando'); $('#fab').setAttribute('aria-label', 'Falar com o assistente'); $('#fab').style.removeProperty('--lvl'); $('#rec').hidden = true;
@@ -740,6 +774,6 @@ window.addEventListener('appinstalled', () => { instalar = null; fechar(); rende
 carregar(); aplicarTema(); render();
 if (location.hash === '#novo') formTx(); else if (location.hash === '#falar') go('assistente');
 /* iPhone e iPad mostram o tutorial logo; o Android espera um instante pelo botão de instalar do próprio navegador */
-fetch('api/status', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(j => { const liga = !!(j && j.assistente); try { localStorage.setItem('grana.servidor', liga ? '1' : '0'); } catch (e) { } if (liga !== servidor) { servidor = liga; if ($('#sheet').hidden && !rec.on && ui.view !== 'assistente') render(); } }).catch(() => { });
+fetch('api/status', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(j => { const liga = !!(j && j.assistente); servidorAudio = !!(j && j.audio); try { localStorage.setItem('grana.servidor', liga ? '1' : '0'); localStorage.setItem('grana.servidorAudio', servidorAudio ? '1' : '0'); } catch (e) { } if (liga !== servidor) { servidor = liga; if ($('#sheet').hidden && !rec.on && ui.view !== 'assistente') render(); } }).catch(() => { });
 setTimeout(oferecerInstalacao, aparelho().ios ? 700 : 3000);
 if ('serviceWorker' in navigator && location.protocol !== 'file:') window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => { }));

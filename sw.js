@@ -1,5 +1,5 @@
 /* Grana — service worker: deixa o app abrir sem internet. Mude VERSAO a cada publicação. */
-const VERSAO = 'grana-v3';
+const VERSAO = 'grana-v4';
 const ARQUIVOS = ['./', 'index.html', 'css/app.css', 'js/app.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
